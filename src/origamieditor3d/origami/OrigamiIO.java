@@ -12,6 +12,8 @@
 // along with this program.  If not, see <http:// www.gnu.org/licenses/>.
 package origamieditor3d.origami;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -22,14 +24,151 @@ import java.util.Arrays;
  */
 public class OrigamiIO {
 
-    final static private double[][] Origins = new double[][]{
-        new double[]{0, 0, 0},
-        new double[]{400, 0, 0},
-        new double[]{0, 400, 0},
-        new double[]{0, 0, 400}
-    };
-    
-    static public Origami read_gen2(java.io.ByteArrayInputStream ori) {
+    static public void write_gen2(Origami origami, String filename, int[] rgb) throws Exception {
+
+        if (!(origami instanceof OrigamiGen2)) {
+            write_gen1(origami, filename);
+            return;
+        }
+        try {
+
+            final int rand = new java.util.Random().nextInt(100000) + 100000;
+            File ori = new File(filename + String.valueOf(rand));
+            if (ori.exists()) {
+                ori.delete();
+            }
+            FileOutputStream str = new FileOutputStream(ori);
+
+            //OE3D
+            str.write(0x4f);
+            str.write(0x45);
+            str.write(0x33);
+            str.write(0x44);
+
+            //version 3
+            str.write(3);
+            //number of payloads
+            if (rgb == null) {
+                str.write(0x63); //compact
+            }
+            else {
+                str.write(1); //1 payload
+            }
+            
+            //paper type
+            str.write((int) origami.papertype().toChar());
+            //corners
+            if (origami.papertype() == Origami.PaperType.Custom) {
+
+                str.write(origami.corners().size());
+                for (int i = 0; i < origami.corners().size(); i++) {
+
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[0]) >>> 24);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[0]) >>> 16);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[0]) >>> 8);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[0]));
+
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[1]) >>> 24);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[1]) >>> 16);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[1]) >>> 8);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[1]));
+                }
+            } else {
+                str.write(0);
+            }
+            
+            //paper color
+            if (rgb != null) {
+                str.write(0x43); //C
+                str.write(0xFF & rgb[0]);
+                str.write(0xFF & rgb[1]);
+                str.write(0xFF & rgb[2]);
+            }
+            
+            //command blocks
+            for (int i = 0; i < origami.history_pointer(); i++) {
+                for (int ii=0; ii<16; ii++) {
+                    str.write(origami.history_stream().get(i)[ii]);
+                }
+            }
+
+            //EOF
+            str.write(0x0A);
+            str.write(0x45);
+            str.write(0x4f);
+            str.write(0x46);
+
+            str.close();
+            origamieditor3d.compression.LZW.compress(new File(filename + String.valueOf(rand)), new File(filename));
+            ori.delete();
+
+        } catch (Exception ex) {
+        }
+    }
+
+    static public void write_gen1(Origami origami, String filename) throws Exception {
+
+        try {
+
+            File ori = new File(filename + "~");
+            if (ori.exists()) {
+                ori.delete();
+            }
+            FileOutputStream str = new FileOutputStream(ori);
+
+            //OE3D
+            str.write(0x4f);
+            str.write(0x45);
+            str.write(0x33);
+            str.write(0x44);
+
+            //version 2, compressed
+            str.write(2);
+            str.write(0x63);
+            //paper type
+            str.write((int) origami.papertype().toChar());
+            //corners
+            if (origami.papertype() == Origami.PaperType.Custom) {
+
+                str.write(origami.corners().size());
+                for (int i = 0; i < origami.corners().size(); i++) {
+
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[0]) >>> 24);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[0]) >>> 16);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[0]) >>> 8);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[0]));
+
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[1]) >>> 24);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[1]) >>> 16);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[1]) >>> 8);
+                    str.write(Float.floatToIntBits((float) origami.corners().get(i)[1]));
+                }
+            } else {
+                str.write(0);
+            }
+
+            //command blocks
+            for (int i = 0; i < origami.history_pointer(); i++) {
+                for (int ii=0; ii<16; ii++) {
+                    str.write(origami.history_stream().get(i)[ii]);
+                }
+            }
+
+            //EOF
+            str.write(0x0A);
+            str.write(0x45);
+            str.write(0x4f);
+            str.write(0x46);
+
+            str.close();
+            origamieditor3d.compression.LZW.compress(new File(filename + "~"), new File(filename));
+            ori.delete();
+
+        } catch (Exception ex) {
+        }
+    }
+
+    static public Origami read_gen2(java.io.ByteArrayInputStream ori, int[] rgb) {
 
         try {
 
@@ -37,6 +176,7 @@ public class OrigamiIO {
             ori.reset();
             java.io.InputStream str = origamieditor3d.compression.LZW.extract(ori);
 
+            //reading header
             int fejlec1 = str.read();
             fejlec1 <<= 8;
             fejlec1 += str.read();
@@ -45,24 +185,24 @@ public class OrigamiIO {
             fejlec1 <<= 8;
             fejlec1 += str.read();
 
-            if (fejlec1 != 0x4f453344) {
+            if (fejlec1 != 0x4f453344) { //OE3D
 
                 str.close();
                 return null;
             } else {
 
-                int fejlec2 = str.read();
+                int fejlec2 = str.read(); //version
                 fejlec2 <<= 8;
-                fejlec2 += str.read();
+                fejlec2 += str.read(); //number of payloads
 
-                if (fejlec2 != 0x0363) {
+                if ((fejlec2 & 0xFF00) != 0x0300) { //ver 3
 
                     str.close();
                     return read_gen1(ori);
                 } else {
 
+                    //paper type
                     int papir = str.read();
-
                     if (Origami.PaperType.forChar((char) papir) != Origami.PaperType.Custom) {
 
                         origami = new OrigamiGen2(Origami.PaperType.forChar((char) papir));
@@ -97,130 +237,62 @@ public class OrigamiIO {
 
                         origami = new OrigamiGen2(sarkok);
                     }
-
-                    int parancsfejlec = str.read();
-                    parancsfejlec <<= 8;
-                    parancsfejlec += str.read();
-                    parancsfejlec <<= 8;
-                    parancsfejlec += str.read();
-                    parancsfejlec <<= 8;
-                    parancsfejlec += str.read();
-                    while (parancsfejlec != 0x0A454f46) {
-
-                        short Xint, Yint, Zint;
-                        int Xfrac, Yfrac, Zfrac;
-
-                        Xint = (short) str.read();
-                        Xint <<= 8;
-                        Xint += str.read();
-                        Xfrac = str.read();
-                        Xfrac <<= 8;
-                        Xfrac += str.read();
-                        double X = Xint + Math.signum(Xint) * (double) Xfrac / 256 / 256;
-
-                        Yint = (short) str.read();
-                        Yint <<= 8;
-                        Yint += str.read();
-                        Yfrac = str.read();
-                        Yfrac <<= 8;
-                        Yfrac += str.read();
-                        double Y = Yint + Math.signum(Yint) * (double) Yfrac / 256 / 256;
-
-                        Zint = (short) str.read();
-                        Zint <<= 8;
-                        Zint += str.read();
-                        Zfrac = str.read();
-                        Zfrac <<= 8;
-                        Zfrac += str.read();
-                        double Z = Zint + Math.signum(Zint) * (double) Zfrac / 256 / 256;
-
-                        double[] sikpont = new double[3];
-                        double[] siknv = new double[3];
-                        sikpont[0] = (double) X + Origins[(((parancsfejlec >>> 24) % 32) - ((parancsfejlec >>> 24) % 8)) / 8][0];
-                        sikpont[1] = (double) Y + Origins[(((parancsfejlec >>> 24) % 32) - ((parancsfejlec >>> 24) % 8)) / 8][1];
-                        sikpont[2] = (double) Z + Origins[(((parancsfejlec >>> 24) % 32) - ((parancsfejlec >>> 24) % 8)) / 8][2];
-                        siknv[0] = X;
-                        siknv[1] = Y;
-                        siknv[2] = Z;
-
-                        //térfélválasztás
-                        if (((parancsfejlec >>> 24) - ((parancsfejlec >>> 24) % 32)) / 32 == 1) {
-
-                            siknv = new double[]{-siknv[0], -siknv[1], -siknv[2]};
+                    
+                    if ((fejlec2 & 0xFF) != 0x63) {
+                        for (int i=0; i<(fejlec2 & 0xFF); i++) {
+                            
+                            int payload_id = str.read();
+                            if (payload_id == 0x43) { //paper color
+                                if (rgb != null) {
+                                    
+                                    rgb[0] = str.read();
+                                    rgb[1] = str.read();
+                                    rgb[2] = str.read();
+                                }
+                                else {
+                                    
+                                    str.read();
+                                    str.read();
+                                    str.read();
+                                }
+                            }
                         }
+                    }
 
-                        double[] parancs;
-                        if ((parancsfejlec >>> 24) % 8 == 1) {
+                    //command blocks
+                    int[] block = new int[16];
+                    int i=-1;
 
-                            //ref. fold
-                            parancs = new double[7];
-                            parancs[0] = 1;
-                        } else if ((parancsfejlec >>> 24) % 8 == 2) {
+                    block[++i] = str.read();
+                    block[++i] = str.read();
+                    block[++i] = str.read();
+                    block[++i] = str.read();
+                    int header = (((((block[0] << 8) + block[1]) << 8) + block[2]) << 8) + block[3];
+                    while (header != 0x0A454f46) {
 
-                            //positive rot. fold
-                            parancs = new double[8];
-                            parancs[0] = 2;
-                            parancs[7] = (parancsfejlec >>> 16) % 256;
-                        } else if ((parancsfejlec >>> 24) % 8 == 3) {
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
 
-                            //negative rot. fold
-                            parancs = new double[8];
-                            parancs[0] = 2;
-                            parancs[7] = -(parancsfejlec >>> 16) % 256;
-                        } else if ((parancsfejlec >>> 24) % 8 == 4) {
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
 
-                            //partial ref. fold
-                            parancs = new double[8];
-                            parancs[0] = 3;
-                            parancs[7] = (double) (parancsfejlec % 65536);
-                        } else if ((parancsfejlec >>> 24) % 8 == 5) {
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
 
-                            //positive partial rot. fold
-                            parancs = new double[9];
-                            parancs[0] = 4;
-                            parancs[7] = (parancsfejlec >>> 16) % 256;
-                            parancs[8] = (double) (parancsfejlec % 65536);
-                        } else if ((parancsfejlec >>> 24) % 8 == 6) {
+                        origami.addCommand(block.clone());
+                        i = -1;
 
-                            //negative partial rot. fold
-                            parancs = new double[9];
-                            parancs[0] = 4;
-                            parancs[7] = (double) -(parancsfejlec >>> 16) % 256;
-                            parancs[8] = (double) (parancsfejlec % 65536);
-                        } else if ((parancsfejlec >>> 24) % 8 == 7) {
-
-                            //crease
-                            parancs = new double[7];
-                            parancs[0] = 5;
-                        } else if (parancsfejlec % 65536 == 65535) {
-
-                            //cut
-                            parancs = new double[7];
-                            parancs[0] = 6;
-                        } else {
-
-                            //partial cut
-                            parancs = new double[8];
-                            parancs[0] = 7;
-                            parancs[7] = (double) (parancsfejlec % 65536);
-                        }
-
-                        parancs[1] = sikpont[0];
-                        parancs[2] = sikpont[1];
-                        parancs[3] = sikpont[2];
-                        parancs[4] = siknv[0];
-                        parancs[5] = siknv[1];
-                        parancs[6] = siknv[2];
-
-                        origami.history.add(parancs);
-
-                        parancsfejlec = str.read();
-                        parancsfejlec <<= 8;
-                        parancsfejlec += str.read();
-                        parancsfejlec <<= 8;
-                        parancsfejlec += str.read();
-                        parancsfejlec <<= 8;
-                        parancsfejlec += str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        header = (((((block[0] << 8) + block[1]) << 8) + block[2]) << 8) + block[3];
                     }
                     origami.redoAll();
                     str.close();
@@ -232,7 +304,7 @@ public class OrigamiIO {
         }
     }
 
-    static public Origami read_gen1(java.io.ByteArrayInputStream ori) {
+    static public Origami read_gen1(java.io.ByteArrayInputStream ori) throws Exception {
 
         try {
 
@@ -301,129 +373,39 @@ public class OrigamiIO {
                         origami = new Origami(sarkok);
                     }
 
-                    int parancsfejlec = str.read();
-                    parancsfejlec <<= 8;
-                    parancsfejlec += str.read();
-                    parancsfejlec <<= 8;
-                    parancsfejlec += str.read();
-                    parancsfejlec <<= 8;
-                    parancsfejlec += str.read();
-                    while (parancsfejlec != 0x0A454f46) {
+                    int[] block = new int[16];
+                    int i=-1;
 
-                        short Xint, Yint, Zint;
-                        int Xfrac, Yfrac, Zfrac;
+                    block[++i] = str.read();
+                    block[++i] = str.read();
+                    block[++i] = str.read();
+                    block[++i] = str.read();
+                    int header = (((((block[0] << 8) + block[1]) << 8) + block[2]) << 8) + block[3];
+                    while (header != 0x0A454f46) {
 
-                        Xint = (short) str.read();
-                        Xint <<= 8;
-                        Xint += str.read();
-                        Xfrac = str.read();
-                        Xfrac <<= 8;
-                        Xfrac += str.read();
-                        double X = Xint + Math.signum(Xint) * (double) Xfrac / 256 / 256;
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
 
-                        Yint = (short) str.read();
-                        Yint <<= 8;
-                        Yint += str.read();
-                        Yfrac = str.read();
-                        Yfrac <<= 8;
-                        Yfrac += str.read();
-                        double Y = Yint + Math.signum(Yint) * (double) Yfrac / 256 / 256;
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
 
-                        Zint = (short) str.read();
-                        Zint <<= 8;
-                        Zint += str.read();
-                        Zfrac = str.read();
-                        Zfrac <<= 8;
-                        Zfrac += str.read();
-                        double Z = Zint + Math.signum(Zint) * (double) Zfrac / 256 / 256;
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
 
-                        double[] sikpont = new double[3];
-                        double[] siknv = new double[3];
-                        sikpont[0] = (double) X + Origins[(((parancsfejlec >>> 24) % 32) - ((parancsfejlec >>> 24) % 8)) / 8][0];
-                        sikpont[1] = (double) Y + Origins[(((parancsfejlec >>> 24) % 32) - ((parancsfejlec >>> 24) % 8)) / 8][1];
-                        sikpont[2] = (double) Z + Origins[(((parancsfejlec >>> 24) % 32) - ((parancsfejlec >>> 24) % 8)) / 8][2];
-                        siknv[0] = X;
-                        siknv[1] = Y;
-                        siknv[2] = Z;
+                        origami.addCommand(block.clone());
+                        i = -1;
 
-                        //térfélválasztás
-                        if (((parancsfejlec >>> 24) - ((parancsfejlec >>> 24) % 32)) / 32 == 1) {
-
-                            siknv = new double[]{-siknv[0], -siknv[1], -siknv[2]};
-                        }
-
-                        double[] parancs;
-                        if ((parancsfejlec >>> 24) % 8 == 1) {
-
-                            //ref. fold
-                            parancs = new double[7];
-                            parancs[0] = 1;
-                        } else if ((parancsfejlec >>> 24) % 8 == 2) {
-
-                            //positive rot. fold
-                            parancs = new double[8];
-                            parancs[0] = 2;
-                            parancs[7] = (parancsfejlec >>> 16) % 256;
-                        } else if ((parancsfejlec >>> 24) % 8 == 3) {
-
-                            //negative rot. fold
-                            parancs = new double[8];
-                            parancs[0] = 2;
-                            parancs[7] = -(parancsfejlec >>> 16) % 256;
-                        } else if ((parancsfejlec >>> 24) % 8 == 4) {
-
-                            //partial ref. fold
-                            parancs = new double[8];
-                            parancs[0] = 3;
-                            parancs[7] = (double) (parancsfejlec % 65536);
-                        } else if ((parancsfejlec >>> 24) % 8 == 5) {
-
-                            //positive partial rot. fold
-                            parancs = new double[9];
-                            parancs[0] = 4;
-                            parancs[7] = (parancsfejlec >>> 16) % 256;
-                            parancs[8] = (double) (parancsfejlec % 65536);
-                        } else if ((parancsfejlec >>> 24) % 8 == 6) {
-
-                            //negative partial rot. fold
-                            parancs = new double[9];
-                            parancs[0] = 4;
-                            parancs[7] = (double) -(parancsfejlec >>> 16) % 256;
-                            parancs[8] = (double) (parancsfejlec % 65536);
-                        } else if ((parancsfejlec >>> 24) % 8 == 7) {
-
-                            //crease
-                            parancs = new double[7];
-                            parancs[0] = 5;
-                        } else if (parancsfejlec % 65536 == 65535) {
-
-                            //cut
-                            parancs = new double[7];
-                            parancs[0] = 6;
-                        } else {
-
-                            //partial cut
-                            parancs = new double[8];
-                            parancs[0] = 7;
-                            parancs[7] = (double) (parancsfejlec % 65536);
-                        }
-
-                        parancs[1] = sikpont[0];
-                        parancs[2] = sikpont[1];
-                        parancs[3] = sikpont[2];
-                        parancs[4] = siknv[0];
-                        parancs[5] = siknv[1];
-                        parancs[6] = siknv[2];
-
-                        origami.history.add(parancs);
-
-                        parancsfejlec = str.read();
-                        parancsfejlec <<= 8;
-                        parancsfejlec += str.read();
-                        parancsfejlec <<= 8;
-                        parancsfejlec += str.read();
-                        parancsfejlec <<= 8;
-                        parancsfejlec += str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        block[++i] = str.read();
+                        header = (((((block[0] << 8) + block[1]) << 8) + block[2]) << 8) + block[3];
                     }
                     origami.redoAll();
                     str.close();

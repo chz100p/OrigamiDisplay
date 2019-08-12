@@ -5,6 +5,7 @@ package origamidisplay;
  */
 public class OrigamiDisplay extends javax.swing.JFrame {
 
+    private static final long serialVersionUID = 1L;
     private int foldNumber;
     private boolean changeListenerShutUp;
     private int mouseX, mouseY;
@@ -112,7 +113,9 @@ public class OrigamiDisplay extends javax.swing.JFrame {
                 bytes[i] = bytesb.get(i);
             }
 
-            dp.update(origamieditor3d.origami.OrigamiIO.read_gen2(new java.io.ByteArrayInputStream(bytes)));
+            int[] rgb = { 0, 0, 0x97 };
+            dp.update(origamieditor3d.origami.OrigamiIO.read_gen2(new java.io.ByteArrayInputStream(bytes), rgb));
+            dp.setFrontColor(rgb[0]*0x10000 + rgb[1]*0x100 + rgb[2]);
             if (dp.PanelOrigami.circumscribedSquareSize() > 0) {
                 dp.PanelCamera.setZoom(0.8 * Math.min(dp.getWidth(), dp.getHeight()) / dp.PanelOrigami.circumscribedSquareSize());
             }
